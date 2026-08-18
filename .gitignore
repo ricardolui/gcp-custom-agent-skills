@@ -1,0 +1,48 @@
+# ==============================================================================
+# Git Ignore for GCP Custom Agent Skills
+# ==============================================================================
+
+# Private Environment & Secret Files (CRITICAL - NEVER COMMIT)
+.env
+.env.*
+!.env.example
+*.env
+looker.ini
+
+# Standard Bundled Skills (distributed via Google Cloud Data Agent Kit)
+/accidental-data-loss-prevention/
+/bigquery-ai-ml/
+/bigquery-bigframes/
+/bigquery-data-transfer-service/
+/bigquery-graph/
+/bigquery-sql/
+/building-data-apps/
+/data-autocleaning/
+/dataform-bigquery/
+/dbt-bigquery/
+/developing-with-bigquery/
+/discovering-gcp-data-assets/
+/enforcing-resource-attribution/
+/federate-lakehouse-catalog/
+/gcloud-auth-verification/
+/gcp-composer-troubleshooting/
+/gcp-data-pipelines/
+/gcp-dataflow/
+/gcp-managed-airflow-dag-authoring/
+/gcp-managed-airflow-migrations/
+/gcp-managed-airflow-recommendations/
+/gcp-pipeline-orchestration/
+/gcp-pipeline-resource-provisioning/
+/gcp-spark/
+/gcs-security-assessment/
+/google-cloud-storage-basics/
+/managing-python-dependencies/
+/ml-best-practices/
+/notebook-guidance/
+/skill-repair/
+
+# System & Tool Metadata
+.DS_Store
+.datacloud_skills_manifest
+__pycache__/
+*.pyc
