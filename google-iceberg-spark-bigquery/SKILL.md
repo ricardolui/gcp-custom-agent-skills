@@ -9,6 +9,23 @@ This skill guides you through implementing and managing an integrated, open-form
 
 ---
 
+## ⚙️ Environment Prerequisites & Security (.env)
+
+> [!IMPORTANT]
+> **Pre-execution Check**: Before executing Dataproc batches or BigQuery Lakehouse DDL/DML:
+> 1. Ensure your environment variables are configured in `.env` (copy from `.env.example` if not present):
+>    ```bash
+>    cp .env.example .env
+>    ```
+> 2. Export environment variables in your active shell:
+>    ```bash
+>    export $(grep -v '^#' .env | xargs)
+>    ```
+> 3. Use `${GCP_PROJECT_ID}`, `${GCP_REGION}`, and `${BIGQUERY_DATASET_ID}` across all commands.
+
+---
+
+
 ## 🏗️ Architectural Overview
 
 A Google Cloud Lakehouse utilizes open-source data formats (specifically **Apache Iceberg**) stored on **Google Cloud Storage (GCS)**, which are registered in a central catalog (the **Lakehouse Iceberg REST Catalog**, formerly BigLake Metastore). 

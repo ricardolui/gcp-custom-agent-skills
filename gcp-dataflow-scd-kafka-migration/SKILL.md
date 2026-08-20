@@ -13,6 +13,22 @@ This skill is the definitive best-practice reference for developing, configuring
 
 ---
 
+## ⚙️ Environment Prerequisites & Security (.env)
+
+> [!IMPORTANT]
+> **Pre-execution Check**: Before building, testing, or launching Dataflow pipelines:
+> 1. Ensure your environment variables are configured in `.env` (copy from `.env.example` if not present):
+>    ```bash
+>    cp .env.example .env
+>    ```
+> 2. Export environment variables in your active shell:
+>    ```bash
+>    export $(grep -v '^#' .env | xargs)
+>    ```
+> 3. Use `${GCP_PROJECT_ID}`, `${GCP_REGION}`, and `${BIGQUERY_DATASET_ID}` when launching jobs rather than hardcoding.
+
+---
+
 ## 🗺️ 1. Core Architectural Pillars
 
 When building and launching Python Apache Beam pipelines, ensure compliance with these core architectural constraints:

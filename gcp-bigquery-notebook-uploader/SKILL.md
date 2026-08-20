@@ -12,6 +12,22 @@ This skill provides a programmatic, automated workflow to upload, sync, and comm
 
 ---
 
+## ⚙️ Environment Prerequisites & Security (.env)
+
+> [!IMPORTANT]
+> **Pre-execution Check**: Before executing upload or download scripts:
+> 1. Ensure `.env` exists in your project root with your project configuration:
+>    ```bash
+>    cp .env.example .env
+>    ```
+> 2. Export variables in your active shell:
+>    ```bash
+>    export $(grep -v '^#' .env | xargs)
+>    ```
+> 3. Use `${GCP_PROJECT_ID}`, `${GCP_REGION:-us-central1}`, and `${GCP_DEFAULT_ACCOUNT}` in place of hardcoded IDs.
+
+---
+
 ## 🛠️ Reusable Python Automation CLI
 
 The skill contains a dependency-free, robust Python 3 CLI script that wraps all required REST API operations.

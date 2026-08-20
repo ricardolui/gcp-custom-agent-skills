@@ -10,6 +10,23 @@ Este guia reúne as melhores práticas e passos necessários para conectar e con
 
 ---
 
+## ⚙️ Pré-requisitos de Ambiente & Segurança (.env)
+
+> [!IMPORTANT]
+> **Verificação Prévia**: Antes de executar scripts, testes ou integrações CLI:
+> 1. Certifique-se de que o arquivo `.env` existe no diretório raiz do projeto (crie a partir do `.env.example` se necessário):
+>    ```bash
+>    cp .env.example .env
+>    ```
+> 2. Exporte as variáveis de ambiente antes da execução:
+>    ```bash
+>    export $(grep -v '^#' .env | xargs)
+>    ```
+> 3. Utilize sempre as variáveis `${LOOKER_BASE_URL}`, `${GEMINI_ENTERPRISE_HOST_PROJECT}` e `${GEMINI_ENTERPRISE_OAUTH_CLIENT_ID}` em vez de expor valores reais em código.
+
+---
+
+
 ## 1. Visão Geral das Abordagens e Arquitetura
 
 Ao disponibilizar dados do Looker no Gemini Enterprise, duas alternativas principais foram avaliadas:

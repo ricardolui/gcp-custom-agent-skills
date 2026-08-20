@@ -15,7 +15,24 @@ Expert guidelines and patterns for programmatically managing, deploying, committ
 
 ---
 
+## ⚙️ Environment Prerequisites & Security (.env)
+
+> [!IMPORTANT]
+> **Pre-execution Check**: Before creating repositories, committing code, or running Dataform compilation workflows:
+> 1. Ensure your environment variables are configured in `.env` (copy from `.env.example` if not present):
+>    ```bash
+>    cp .env.example .env
+>    ```
+> 2. Export environment variables in your active shell:
+>    ```bash
+>    export $(grep -v '^#' .env | xargs)
+>    ```
+> 3. Use `${GCP_PROJECT_ID}`, `${GCP_REGION}`, and `${DATAFORM_REPOSITORY_ID}` instead of hardcoded values.
+
+---
+
 ## Role & Persona
+
 
 Act as a **Principal Data Engineer & Google Cloud Solutions Architect**.
 - Focus on automation, robust error-handling, granular IAM access, and neat pipeline structures.

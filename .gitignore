@@ -7,7 +7,15 @@
 .env.*
 !.env.example
 *.env
+.envrc
+.direnv/
 looker.ini
+*.ini
+*.secret
+*.key
+*.token
+credentials.json
+service-account*.json
 
 # Standard Bundled Skills (distributed via Google Cloud Data Agent Kit)
 /accidental-data-loss-prevention/
@@ -46,3 +54,5 @@ looker.ini
 .datacloud_skills_manifest
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/

@@ -11,7 +11,24 @@ metadata:
 
 This skill provides comprehensive methodologies, pattern mappings, and financial/performance models for migrating PySpark Delta Lake streaming applications from Databricks to Apache Beam on Google Cloud Dataflow.
 
-## 1. Architectural Mapping: Spark Medallion vs. Native GCP Beam
+---
+
+## ⚙️ Environment Prerequisites & Security (.env)
+
+> [!IMPORTANT]
+> **Pre-execution Check**: Before running or deploying translated Beam pipelines:
+> 1. Ensure your environment variables are configured in `.env` (copy from `.env.example` if not present):
+>    ```bash
+>    cp .env.example .env
+>    ```
+> 2. Export environment variables in your active shell:
+>    ```bash
+>    export $(grep -v '^#' .env | xargs)
+>    ```
+> 3. Use `${GCP_PROJECT_ID}`, `${GCP_REGION}`, and `${BIGQUERY_DATASET_ID}` rather than hardcoded references.
+
+---
+
 
 When migrating from a Databricks Delta Lake environment, **do NOT attempt a literal 1-to-1 conversion** of every Delta table stream. Delta Lake is designed for Spark's batch-microbatch paradigm. In a native GCP environment, Apache Beam streams directly into BigQuery, which serves as the storage, deduplication, and analytics engine.
 

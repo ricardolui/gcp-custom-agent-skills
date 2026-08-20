@@ -14,13 +14,33 @@ Using the local MCP Toolbox is the official standard for allowing AI agents to q
 
 ---
 
+## ⚙️ Environment Prerequisites & Security (.env)
+
+> [!IMPORTANT]
+> **Pre-execution Check**: AI Agents and CLI scripts **MUST** ensure environment variables are sourced from `.env` before executing any commands or starting the MCP server.
+
+1. **Verify or Create `.env`**:
+   If `.env` does not exist in your workspace, copy `.env.example`:
+   ```bash
+   cp .env.example .env
+   ```
+2. **Export Variables Before Shell Execution**:
+   When executing CLI commands or scripts that rely on Looker credentials:
+   ```bash
+   export $(grep -v '^#' .env | xargs)
+   ```
+3. **Security**: The `.env` file is strictly ignored by `.gitignore` and must never be committed to Git.
+
+---
+
 ## 1. Looker Credentials Reference
 
 To connect to your Looker server, obtain an API3 Client ID and Client Secret from your Looker Admin Console (**Admin > Users > Edit User > API3 Keys**):
 
 - **Base URL**: `https://<YOUR_LOOKER_INSTANCE>.looker.app` (e.g., `https://analytics.example.com` or port `443`/`19999`)
-- **Client ID**: `<YOUR_LOOKER_CLIENT_ID>`
-- **Client Secret**: `<YOUR_LOOKER_CLIENT_SECRET>`
+- **Client ID**: `<YOUR_LOOKER_CLIENT_ID>` (Set as `LOOKER_CLIENT_ID` in `.env`)
+- **Client Secret**: `<YOUR_LOOKER_CLIENT_SECRET>` (Set as `LOOKER_CLIENT_SECRET` in `.env`)
+
 
 ---
 

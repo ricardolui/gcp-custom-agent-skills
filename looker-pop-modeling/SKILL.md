@@ -12,10 +12,27 @@ This skill documents architectural patterns, best practices, and deployment proc
 
 ---
 
+## ⚙️ Environment Prerequisites & Security (.env)
+
+> [!IMPORTANT]
+> **Pre-execution Check**: Before running any BigQuery loads, Looker SDK deployment scripts, or LookML validator commands:
+> 1. Ensure your environment variables are configured in `.env` (copy from `.env.example` if not present):
+>    ```bash
+>    cp .env.example .env
+>    ```
+> 2. Export environment variables in your shell before executing commands:
+>    ```bash
+>    export $(grep -v '^#' .env | xargs)
+>    ```
+> 3. Use `${GCP_PROJECT_ID}` and `${BIGQUERY_DATASET_ID}` in scripts instead of hardcoded project/dataset names.
+
+---
+
 ## 1. Looker Semantic Modeling & Surrogate Keys
 
 > [!IMPORTANT]
 > **Surrogate Key Resolution Rule**: When underlying physical database tables (e.g. `analytics_mart.customer_snapshot`) do **NOT** contain a physical hash column and only contain raw identifiers (`customer_id` or `tax_id`), any view that acts as a base or join participant must calculate this surrogate key dynamically to avoid `Unrecognized name` SQL runtime execution failures.
+
 
 ### Correct Dynamic Hashing Formula:
 Always compute the SHA256 hex string casting the raw column to string:
