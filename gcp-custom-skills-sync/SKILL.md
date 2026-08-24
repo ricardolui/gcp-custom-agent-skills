@@ -12,7 +12,7 @@ This skill acts as an operational memory and guide for backing up, maintaining, 
 ## 🏷️ Repository Identity & Metadata
 
 *   **Repository URL**: [gcp-custom-agent-skills](https://github.com/ricardolui/gcp-custom-agent-skills) (`https://github.com/ricardolui/gcp-custom-agent-skills.git`)
-*   **Local Directory Path**: `~/.gemini/config/skills/`
+*   **Local Directory Path**: `/Users/gricardo/.gemini/config/skills/`
 *   **Git Tracking Model**: Only tracks **custom, unique, non-bundled** skills. Standard system/bundled skills are automatically ignored via `.gitignore`.
 
 ---
@@ -26,7 +26,7 @@ To see what custom skills have been modified or newly created, run:
 ```bash
 git status
 ```
-*Note: Any new folder created inside the `~/.gemini/config/skills/` directory that is not in `.gitignore` will be automatically detected as an untracked change.*
+*Note: Any new folder created inside the `/Users/gricardo/.gemini/config/skills/` directory that is not in `.gitignore` will be automatically detected as an untracked change.*
 
 ### 2. Commit and Push Changes to GitHub Private Repo
 Once changes are confirmed, stage, commit, and push them directly:
@@ -43,6 +43,6 @@ git push origin main
 To introduce a new custom skill to the system and the backup:
 
 1.  **Create a New Directory** under the skills folder:
-    `mkdir -p ~/.gemini/config/skills/my-new-skill-name`
+    `mkdir -p /Users/gricardo/.gemini/config/skills/my-new-skill-name`
 2.  **Initialize `SKILL.md`** inside the folder with proper YAML frontmatter (`name`, `description`).
 3.  **Run Git Commands**: Since the `.gitignore` is pre-configured to only ignore standard bundles, Git will immediately detect the new `/my-new-skill-name/` folder. Stage, commit, and push it following the operational workflow above!
