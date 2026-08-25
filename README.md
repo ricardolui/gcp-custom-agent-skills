@@ -105,6 +105,21 @@ To configure local private credentials (such as Looker API keys or default proje
 
 ---
 
+## 🤝 Contributing
+
+Contributions to this library are welcome and encouraged! See [CONTRIBUTING.md](CONTRIBUTING.md) for details on the Contributor License Agreement (CLA) and pull request workflows.
+
+Please review and adhere to the [Google Open Source Community Guidelines](CODE_OF_CONDUCT.md).
+
+---
+
+## ⚠️ Disclaimer
+
+This is not an officially supported Google product. The skills, patterns, and code samples provided in this repository are intended for community, educational, and architectural reference purposes.
+
+---
+
 ## 📄 License
 
-Apache-2.0 License. See [LICENSE](LICENSE) for details.
+This repository is licensed under the **Apache 2.0 License** - see the [LICENSE](LICENSE) file for details.
+
