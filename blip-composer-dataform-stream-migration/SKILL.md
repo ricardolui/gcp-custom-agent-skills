@@ -175,10 +175,13 @@ with DAG(
                 compilation_result={
                     "git_commitish": 'feat/kfkconn-copilot-pilot', # Switch to 'main' post-merge
                     "code_compilation_config": {
+                        "schema_suffix": "_kfkconn_test", # Dataform adiciona underscore automaticamente; gera __kfkconn_test. Set to "" para producao
                         "vars": {
                             "project_id": "blip-dpl-prd-sam-i-plt-str-0",
+                            "raw_platform_dataset": "raw_platform_kfkconn",
                             "raw_copilot_dataset": "raw_platform_kfkconn",
-                            "schema_suffix": "__kfkconn_test", # Set to "" for official production
+                            "raw_blipaisuite_dataset": "raw_blipaisuite_kfkconn",
+                            "raw_dataset_suffix": "_kfkconn",
                             "REGION": "sam",
                             "ENV": "prd"
                         },
@@ -269,21 +272,43 @@ with DAG(
 2. **Update DAG in GCS:**
    * Set `"git_commitish": "main"`
    * Remove or empty `"schema_suffix": ""` so outputs write to `silver_copilot.ticket_end_summary_created`.
-3. **Drain Legacy Dataflow Job:**
-   * Identify job ID:
+3. **Drain Legacy Kafka Dataflow Jobs:**
+   * Identify active Confluent Kafka Dataflow job IDs:
      ```bash
      CLOUDSDK_ACTIVE_CONFIG_NAME=blip gcloud dataflow jobs list \
        --region=southamerica-east1 \
        --status=active \
-       --filter="name:confluent-copilot-ticket-end-summary-created*"
+       --filter="name:confluent-*"
      ```
-   * Drain the job (gracefully empties in-flight buffer without data loss):
+   * Drain the Confluent jobs (gracefully empties in-flight buffer without data loss):
      ```bash
      CLOUDSDK_ACTIVE_CONFIG_NAME=blip gcloud dataflow jobs drain <JOB_ID> \
        --region=southamerica-east1
      ```
-4. **Pause Legacy DAG in Composer:**
-   Pause `ING_EVH_KAFKA_COPILOT_TICKET_END_SUMMARY_CREATED` to eliminate obsolete runs.
+
+4. **Differentiated DAG Architecture & Decoupling (_KFKCONN vs _ORIG_EVH):**
+   > [!CRITICAL]
+   > **Never blind-pause or delete a legacy DAG without decoupling EventHub operators!**
+   > - **For the 19 Pure Kafka DAGs** (zero EventHub operators, e.g. `dag_ING_EVH_BLIPAISUITE_BLUFAQREQUESTS.py`):
+   >   Deploy `dag_<NAME>_KFKCONN.py`. Once validated in shadow test (`SCHEMA_SUFFIX = "__kfkconn_test"`), remove suffix for production cutover and pause/archive the legacy DAG.
+   > - **For the 39 Dual DAGs** (contain both Confluent Kafka and Azure EventHubs operators):
+   >   **Generate TWO Decoupled DAGs:**
+   >   1. `dag_<ORIGINAL_ID>_KFKCONN.py`:
+   >      - Handles ONLY the incremental Dataform routines (Silver materialization) reading from Kafka Connect BigLake Iceberg tables.
+   >      - Strips 100% of Dataflow operators.
+   >      - During testing, runs with `SCHEMA_SUFFIX = "__kfkconn_test"`.
+   >   2. `dag_<ORIGINAL_ID>_ORIG_EVH.py`:
+   >      - Retains 100% of the 166 true Azure EventHubs streaming jobs (`EventHubsToBigQuery.json`).
+   >      - Strips all Kafka Dataflow jobs (`confluent-*` and `take-*`) and strips the Dataform taskgroup.
+   >      - Operates exclusively as guardian for EventHubs until Pub/Sub Import migration is complete.
+   >   > [!WARNING]
+   >   > **DEPLOY TIMING RULE:** The 39 `_ORIG_EVH` DAGs MUST NOT be uploaded to Cloud Composer during shadow testing! They remain saved locally and are only uploaded during the final production cutover when the legacy dual DAG is decommissioned, preventing duplicate EventHub streaming monitors.
+
+5. **Operational Rollback SOP:**
+   - **Rollback in Airflow (Instant, Zero Code Changes):**
+     - Pause the `_KFKCONN` DAG in the Composer UI.
+     - Unpause the legacy DAG.
+     - The Dataform models automatically revert to reading from legacy `raw_platform` tables via the ternary condition (`vars.raw_platform_dataset ? ref(...) : ref("raw_platform", ...)`), because the legacy DAG does not supply the `raw_platform_dataset` variable.
 
 ---
 
@@ -309,6 +334,7 @@ with DAG(
 ---
 
 ## 🔗 Related Skills & Documentation
+- `[blip-pubsub-eventhub-migration](file:///usr/local/google/home/gricardo/.gemini/config/skills/blip-pubsub-eventhub-migration/SKILL.md)`: Azure Event Hubs migration via Cloud Pub/Sub Import and BigLake Iceberg tables.
 - `[confluent-kafka-bigquery-ingestion](file:///usr/local/google/home/gricardo/.gemini/config/skills/confluent-kafka-bigquery-ingestion/SKILL.md)`: Confluent Cloud SMT and Iceberg table mapping.
 - `[gcp-dataform-deployment](file:///usr/local/google/home/gricardo/.gemini/config/skills/gcp-dataform-deployment/SKILL.md)`: Dataform REST API endpoints and token handling.
 - `[blip-dataflow-kafka-parity-audit.md](file:///usr/local/google/home/gricardo/memory/default/projects/blip-dataflow-kafka-parity-audit.md)`: Full audit methodology and Dataflow shutdown readiness.
