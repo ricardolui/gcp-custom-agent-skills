@@ -38,6 +38,7 @@ These skills empower AI coding assistants (Google Antigravity, Gemini CLI, Claud
 
 | Skill | Description | Key Features |
 | :--- | :--- | :--- |
+| **[`confluent-kafka-bigquery-ingestion`](confluent-kafka-bigquery-ingestion/SKILL.md)** | Confluent Cloud to BigQuery & BigLake Iceberg Ingestion | Direct streaming via `BigQueryStorageSink` with 5-stage SMT pipeline, static `_meta_source_signature` tenant tagging, zero-downtime in-place config upgrades, and day-by-day partitioned historical backfills bypassing streaming buffer locks. |
 | **[`gcp-dataflow-scd-kafka-migration`](gcp-dataflow-scd-kafka-migration/SKILL.md)** | Production Apache Beam Pipelines on Cloud Dataflow | Low-latency streaming blueprints covering Google Managed Kafka `SASL/OAUTHBEARER` (JDK 21 sidecar overrides), 3-flag high-throughput tuning, SCD Type 1 via CDC multimap side-inputs, and BigQuery Storage Write API type-conformity guards. |
 | **[`spark-to-beam-translator`](spark-to-beam-translator/SKILL.md)** | Databricks PySpark to Apache Beam Dataflow Migration | Architectural mapping, stateful deduplication, slow-moving dimension enrichment, and cost optimization framework for migrating from Delta Lake to Google Cloud native streaming. |
 
