@@ -12,25 +12,27 @@ This skill acts as an operational memory and guide for backing up, maintaining, 
 ## 🏷️ Repository Identity & Metadata
 
 *   **Repository URL**: [gcp-custom-agent-skills](https://github.com/ricardolui/gcp-custom-agent-skills) (`https://github.com/ricardolui/gcp-custom-agent-skills.git`)
-*   **Local Directory Path**: `/Users/gricardo/.gemini/config/skills/`
-*   **Git Tracking Model**: Only tracks **custom, unique, non-bundled** skills. Standard system/bundled skills are automatically ignored via `.gitignore`.
+*   **Active Skills Directory**: `/usr/local/google/home/gricardo/.gemini/config/skills/`
+*   **Local Git Clone Path**: `/usr/local/google/home/gricardo/gcp-custom-agent-skills/`
+*   **Git Tracking Model**: Only tracks **custom, unique, non-bundled** skills. Standard system/bundled symlinks are automatically ignored.
 
 ---
 
 ## 🔄 Operational Git Sync Workflows
 
-Whenever the user or the assistant completes a modification, fix, or creation of a skill, you must execute the backup workflow to preserve the changes.
+Whenever the user or the assistant completes a modification, fix, or creation of a custom skill in `/usr/local/google/home/gricardo/.gemini/config/skills/`, execute the backup workflow to mirror and push the changes to GitHub.
 
-### 1. Stage and Verify Local Changes
-To see what custom skills have been modified or newly created, run:
+### 1. Mirror Custom Skills to Git Repository
+Copy non-symlinked custom skill directories into the local git clone:
 ```bash
-git status
+rsync -av --exclude='.*' /usr/local/google/home/gricardo/.gemini/config/skills/blip-pubsub-eventhub-migration /usr/local/google/home/gricardo/gcp-custom-agent-skills/
+rsync -av --exclude='.*' /usr/local/google/home/gricardo/.gemini/config/skills/gcp-custom-skills-sync /usr/local/google/home/gricardo/gcp-custom-agent-skills/
 ```
-*Note: Any new folder created inside the `/Users/gricardo/.gemini/config/skills/` directory that is not in `.gitignore` will be automatically detected as an untracked change.*
 
-### 2. Commit and Push Changes to GitHub Private Repo
-Once changes are confirmed, stage, commit, and push them directly:
+### 2. Stage, Commit, and Push Changes to GitHub Private Repo
 ```bash
+cd /usr/local/google/home/gricardo/gcp-custom-agent-skills
+git status
 git add .
 git commit -m "feat: sync and backup custom agent skills"
 git push origin main
@@ -42,7 +44,7 @@ git push origin main
 
 To introduce a new custom skill to the system and the backup:
 
-1.  **Create a New Directory** under the skills folder:
-    `mkdir -p /Users/gricardo/.gemini/config/skills/my-new-skill-name`
+1.  **Create a New Directory** under the active skills folder:
+    `mkdir -p /usr/local/google/home/gricardo/.gemini/config/skills/my-new-skill-name`
 2.  **Initialize `SKILL.md`** inside the folder with proper YAML frontmatter (`name`, `description`).
-3.  **Run Git Commands**: Since the `.gitignore` is pre-configured to only ignore standard bundles, Git will immediately detect the new `/my-new-skill-name/` folder. Stage, commit, and push it following the operational workflow above!
+3.  **Sync to Git Repository**: Mirror to `/usr/local/google/home/gricardo/gcp-custom-agent-skills/`, stage, commit, and push following the workflow above.
