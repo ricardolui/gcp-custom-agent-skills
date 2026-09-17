@@ -237,15 +237,34 @@ Deploy via Confluent Cloud Connect REST API:
     "transforms.insertMeta1.topic.field": "_meta_namespace",
     "transforms.insertMeta1.key.field": "messageKey",
     "transforms.insertMeta2.type": "org.apache.kafka.connect.transforms.InsertField$Value",
-    "transforms.insertMeta2.timestamp.field": "_meta_ingestion_time",
+    "transforms.ingestionTime.type": "org.apache.kafka.connect.transforms.TimestampNowField$Value",
+    "transforms.ingestionTime.timestamp.field": "_meta_ingestion_time",
     "transforms.insertSignature.type": "org.apache.kafka.connect.transforms.InsertField$Value",
     "transforms.insertSignature.static.field": "_meta_source_signature",
     "transforms.insertSignature.static.value": "caramelo",
     "transforms.cast.type": "org.apache.kafka.connect.transforms.Cast$Value",
-    "transforms.cast.spec": "_meta_partition_id:string"
+    "transforms.cast.spec": "_meta_partition_id:string,_meta_sequence_number:string"
   }
 }
 ```
+
+---
+
+## 5.1. Active Multi-Region Confluent Cloud & Kafka Connect Credentials Matrix (`.env`)
+
+All scripts and deployments in the workspace must reference the active multi-region API keys configured in `/usr/local/google/home/gricardo/blip-migration/.env`.
+
+> [!CRITICAL]
+> **Mandatory Consumer Group ACL Requirement:**
+> Every Kafka API Key used by a Confluent Cloud managed connector (`BigQueryStorageSink`) **MUST** have ACL permissions `READ`, `DESCRIBE`, and `DELETE` on Consumer Group prefix `connect-` (e.g., `connect-lcc-*` or `connect-<connector_name>`). Without this ACL, all tasks fail with `GroupAuthorizationException`.
+
+| Region / Env | Cluster ID | Bootstrap Server | `.env` Variable Name | Active API Key | Provider Integration |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Control Plane** | Org-wide (`env-m62nqq`) | `https://api.confluent.cloud` | `CONFLUENT_CLOUD_API_KEY` | `GMX2O344FGJ5RFXQ` | N/A |
+| **SAM (Brazil Prod)** | `lkc-m1wog7` | `lkc-m1wog7.brazilsouth.azure.private.confluent.cloud:9092` | `KAFKA_API_KEY` | `YUZJ4E6GD54TQ53K` | `cspi-1q80j` |
+| **NAM (US East Prod)** | `lkc-6kk37k2` | `lkc-6kk37k2.eastus.azure.private.confluent.cloud:9092` | `KAFKA_NAM_API_KEY` | `VNEBP36FZD26YOZH` | `cspi-pdwnm` |
+| **EUR (Germany Prod)** | `lkc-zmmgymd` | `lkc-zmmgymd.germanywestcentral.azure.private.confluent.cloud:9092` | `KAFKA_EUR_API_KEY` | `4KN57IOQNKPT4ZZE` | `cspi-jdzop` |
+| **DEV (US East 2 Dev)**| `lkc-0n18zp` | `pkc-lgwgm.eastus2.azure.confluent.cloud:9092` | `KAFKA_DEV_API_KEY` | `TM6M7DLPWWA4XPLM` | N/A |
 
 ---
 
