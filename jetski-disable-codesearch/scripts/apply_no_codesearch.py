@@ -179,7 +179,14 @@ def apply_layers(target_dir: Path) -> Path:
 
   # Layer 1A: GEMINI.md
   gemini_md = target_dir / "GEMINI.md"
-  gemini_md.write_text(GEMINI_MD_SECTION, encoding="utf-8")
+  if gemini_md.exists():
+    existing = gemini_md.read_text(encoding="utf-8")
+    if "no-codesearch" not in existing and "PROIBIDO usar ferramentas" not in existing:
+      gemini_md.write_text(
+          existing.rstrip() + "\n\n" + GEMINI_MD_SECTION, encoding="utf-8"
+      )
+  else:
+    gemini_md.write_text(GEMINI_MD_SECTION, encoding="utf-8")
 
   # Layer 1B: _agents/rules/no-codesearch.md
   rules_dir = target_dir / "_agents" / "rules"
