@@ -1,8 +1,8 @@
 ---
 name: confluent-kafka-bigquery-ingestion
-description: Ingest Kafka topics from Confluent Cloud directly into Google Cloud BigQuery and BigLake Apache Iceberg tables using BigQueryStorageSink with static SMTs, in-place connector upgrades, and partitioned historical backfills.
+description: Ingest Kafka topics from Confluent Cloud directly into Google Cloud BigQuery and BigLake Apache Iceberg tables using BigQueryStorageSink with zero-staging canonical Graph Coloring distribution (tasks.max=1), static SMTs (including TimestampNowField$Value), Confluent IAM/RBAC DLQ bindings (dlq-lcc-*), segregated multi-tenant projects (str-0 vs shs-0 Shiba), and partitioned historical backfills.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # Confluent Cloud to BigQuery & BigLake Iceberg Ingestion (BigQueryStorageSink)
@@ -255,16 +255,43 @@ Deploy via Confluent Cloud Connect REST API:
 All scripts and deployments in the workspace must reference the active multi-region API keys configured in `/usr/local/google/home/gricardo/blip-migration/.env`.
 
 > [!CRITICAL]
-> **Mandatory Consumer Group ACL Requirement:**
-> Every Kafka API Key used by a Confluent Cloud managed connector (`BigQueryStorageSink`) **MUST** have ACL permissions `READ`, `DESCRIBE`, and `DELETE` on Consumer Group prefix `connect-` (e.g., `connect-lcc-*` or `connect-<connector_name>`). Without this ACL, all tasks fail with `GroupAuthorizationException`.
+> **1. Data-Plane vs. Control-Plane API Key Distinction & `POST /connectors` IAM Scope:**
+> - **Control-Plane Key (`CONFLUENT_CLOUD_API_KEY` = `IDTRE2E2BK5U2VN3`)**: Authenticates to `https://api.confluent.cloud/connect/v1/...` via HTTP Basic Auth (`-u "$CONFLUENT_CLOUD_API_KEY:$CONFLUENT_CLOUD_API_SECRET"`). Used to list (`GET`), validate (`PUT /config/validate`), update (`PUT /config`), and create (`POST`) connectors.
+> - **Provider Integration Authorization (`cspi-*`)**: Because our connectors authenticate to Google Cloud via `"authentication.method": "Google service account impersonation"` and `"provider.integration.id": "cspi-*"`, creating (`POST /connectors`) or modifying connectors requires **`EnvironmentAdmin`** (or explicit permission on the cluster + Provider Integration `cspi-1q80j` for SAM, `cspi-pdwnm` for NAM, `cspi-jdzop` for EUR).
+> - **Data-Plane Kafka Cluster Keys (`KAFKA_API_KEY`, `KAFKA_NAM_API_KEY`, `KAFKA_EUR_API_KEY`, `KAFKA_DEV_API_KEY`)**: All owned by ServiceAccount **`User:sa-970qk2v`**, authenticating directly to the Kafka brokers (`lkc-*.confluent.cloud:9092`) inside connector payloads (`"kafka.api.key"` / `"kafka.api.secret"`).
+>
+> **2. Mandatory Kafka RBAC Bindings for Managed Connectors & DLQ Topics (`dlq-lcc-*`):**
+> Every new Confluent Cloud `BigQueryStorageSink` connector automatically provisions an internal Dead Letter Queue topic named `dlq-lcc-<connector-id>` on startup. The Service Account owning `kafka.api.key` (`User:sa-970qk2v`) **MUST** have the following RBAC bindings on the target cluster CRN (`crn://confluent.cloud/organization=86c98bea-f99a-4610-9e0f-e156c6c63457/environment=env-m62nqq/cloud-cluster=<cluster_id>`):
+> - `ResourceOwner` and `DeveloperWrite` on `<cluster_crn>/kafka=<cluster_id>/topic=dlq-lcc-*` (prevents `TopicAuthorizationException: Not authorized to access topics: [dlq-lcc-*]`)
+> - `DeveloperRead` on `<cluster_crn>/kafka=<cluster_id>/topic=*`
+> - `DeveloperRead` and `ResourceOwner` on `<cluster_crn>/kafka=<cluster_id>/group=*`
+>
+> **3. Canonical Zero-Staging Table Distribution Rule (`topic2table.map` Graph Coloring $K_{\min}$ & `tasks.max = 1`):**
+> Within a single `BigQueryStorageSink` connector, no two topics may map to the same right-hand side (RHS) destination table in `topic2table.map` (`Table names cannot be duplicated`), and `RegexRouter` is disallowed by Org Policy.
+> - **Graph Coloring Theorem ($K_{\min}(D) = \max_{T \in D} |M(T)|$)**: Distribute topics across $K_{\min}(D)$ connectors per dataset/project with **`tasks.max = 1`** so that inside every single connector no two topics share a destination table name, while multiple connectors write concurrently via BigQuery Storage Write API to the same canonical Apache Iceberg table (`raw_*_kfkevh.imt_*`).
+> - **Zero Intermediate Tables & Zero Daemons**: Eliminate 100% of intermediate staging tables (`imt_blip_message`, `imt_omni_message`, `imt_recipient_message`, `imt_<tenant>_copilot_*`) by draining residual rows (`INSERT INTO ... WHERE NOT EXISTS`) and executing `DROP TABLE IF EXISTS`.
+> - **Wall-Clock Ingestion Timestamp SMT**: Use `transforms.insertMeta2.type = org.apache.kafka.connect.transforms.TimestampNowField$Value` (`transforms.insertMeta2.field = _meta_ingestion_time`) so `_meta_ingestion_time` records true wall-clock ingestion time rather than duplicating `_meta_enqueued_time`.
+>
+> **4. Multi-Project Tenant Segregation (`str-0` Standard Tenants vs. `shs-0` Shiba):**
+> - Standard tenants (`caramelo`, `husky`, `labrador`, `beagle`, `boxer`, `dalmata`, `maltes`, `starter`, `golden`, `prod`) write to project **`blip-dpl-prd-sam-i-plt-str-0`** (`datasets = raw_platform_kfkevh`, `raw_copilot_kfkevh`, `raw_blipaisuite_kfkevh`), matching Databricks catalog **`bliplayer`**.
+> - Shiba (`shiba-*`) is strictly segregated at the GCP project level and **MUST ONLY** write to project **`blip-dpl-prd-sam-i-plt-shs-0`** (`datasets = raw_platform_kfkevh`, tables `imt_*_shiba` managed by Terraform in `migracao_ingestao_v2/01_terraform/environments/sam/kfkevh_datasets_and_tables.tf`), matching Databricks catalog **`bliplayer_shiba`** (`bliplayer_shiba.raw.*` and `bliplayer_shiba.shibablipraw.*`). **NEVER** create `_shiba` tables inside `blip-dpl-prd-sam-i-plt-str-0`.
 
-| Region / Env | Cluster ID | Bootstrap Server | `.env` Variable Name | Active API Key | Provider Integration |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Control Plane** | Org-wide (`env-m62nqq`) | `https://api.confluent.cloud` | `CONFLUENT_CLOUD_API_KEY` | `GMX2O344FGJ5RFXQ` | N/A |
-| **SAM (Brazil Prod)** | `lkc-m1wog7` | `lkc-m1wog7.brazilsouth.azure.private.confluent.cloud:9092` | `KAFKA_API_KEY` | `YUZJ4E6GD54TQ53K` | `cspi-1q80j` |
-| **NAM (US East Prod)** | `lkc-6kk37k2` | `lkc-6kk37k2.eastus.azure.private.confluent.cloud:9092` | `KAFKA_NAM_API_KEY` | `VNEBP36FZD26YOZH` | `cspi-pdwnm` |
-| **EUR (Germany Prod)** | `lkc-zmmgymd` | `lkc-zmmgymd.germanywestcentral.azure.private.confluent.cloud:9092` | `KAFKA_EUR_API_KEY` | `4KN57IOQNKPT4ZZE` | `cspi-jdzop` |
-| **DEV (US East 2 Dev)**| `lkc-0n18zp` | `pkc-lgwgm.eastus2.azure.confluent.cloud:9092` | `KAFKA_DEV_API_KEY` | `TM6M7DLPWWA4XPLM` | N/A |
+| Key Type | Region / Env | Cluster ID | Bootstrap Server | `.env` Variable Name | Active API Key | Provider Integration |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Control Plane (REST API)** | Org-wide (`env-m62nqq`) | `Cloud API` | `https://api.confluent.cloud` | `CONFLUENT_CLOUD_API_KEY` | `IDTRE2E2BK5U2VN3` | N/A |
+| **Data Plane (Kafka Broker)** | **SAM (Brazil Prod)** | `lkc-m1wog7` | `lkc-m1wog7.brazilsouth.azure.private.confluent.cloud:9092` | `KAFKA_API_KEY` | `YUZJ4E6GD54TQ53K` | `cspi-1q80j` |
+| **Data Plane (Kafka Broker)** | **NAM (US East Prod)** | `lkc-6kk37k2` | `lkc-6kk37k2.eastus.azure.private.confluent.cloud:9092` | `KAFKA_NAM_API_KEY` | `VNEBP36FZD26YOZH` | `cspi-pdwnm` |
+| **Data Plane (Kafka Broker)** | **EUR (Germany Prod)** | `lkc-zmmgymd` | `lkc-zmmgymd.germanywestcentral.azure.private.confluent.cloud:9092` | `KAFKA_EUR_API_KEY` | `4KN57IOQNKPT4ZZE` | `cspi-jdzop` |
+| **Data Plane (Kafka Broker)** | **DEV (US East 2 Dev)**| `lkc-0n18zp` | `pkc-lgwgm.eastus2.azure.confluent.cloud:9092` | `KAFKA_DEV_API_KEY` | `TM6M7DLPWWA4XPLM` | N/A |
+
+## 5.2. Production Rollout Status Across All 4 Clusters (`SAM`, `NAM`, `EUR`, `DEV`)
+
+| Region / Env | Cluster ID | Total Connectors | `gcp_*` Connectors | Non-`gcp_*` Connectors (Untouched) | BigQuery `_kfkevh` Canonical Tables | Canonical Zero-Staging Connector Status |
+| :--- | :--- | :---: | :---: | :---: | :--- | :--- |
+| **SAM (Prod)** | `lkc-m1wog7` (`env-m62nqq`) | **68** | **51 / 51 `RUNNING`** (`tasks.max=1`) | **17** (`RUNNING`) | **100% Deployed** (`str-0` + `shs-0`); **54 intermediate tables drained (93.5M rows) & dropped** | **100% Live in Production** (`gcp_bq_sink_sam_platform_01..36`, `gcp_bq_sink_sam_copilot_01..09`, `gcp_bq_sink_sam_shiba_01..04`, `gcp_bq_sink_platform_core_blip`, `gcp_bq_sink_brazil_conversationalmessages_sr`) |
+| **NAM (Prod)** | `lkc-6kk37k2` (`env-m62nqq`) | **10** | **1 `RUNNING`** (`gcp_bq_sink_nam_platform_core`) | **9** (`RUNNING`) | **100% Created (21 tables)** in `blip-dpl-prd-nam-i-plt-str-0.raw_platform_kfkevh` (`us-east1`) + IAM granted to `blip-dpl-prd-nam-confluent-sa` | **Script Ready (`scripts/migrate_nam_eur_canonical_zero_staging.py`)**: Deploys `gcp_bq_sink_nam_platform_01..02` (`tasks.max=1`) as soon as `EnvironmentAdmin` / `cspi-pdwnm` + `dlq-lcc-*` RBAC is granted on `lkc-6kk37k2` |
+| **EUR (Prod)** | `lkc-zmmgymd` (`env-m62nqq`) | **10** | **1 `RUNNING`** (`gcp_bq_sink_eur_platform_core`) | **9** (`RUNNING`) | **100% Created (21 tables)** in `blip-dpl-prd-eur-i-plt-str-0.raw_platform_kfkevh` (`europe-west3`) + IAM granted to `blip-dpl-prd-eur-confluent-sa` | **Script Ready (`scripts/migrate_nam_eur_canonical_zero_staging.py`)**: Deploys `gcp_bq_sink_eur_platform_01..02` (`tasks.max=1`) as soon as `EnvironmentAdmin` / `cspi-jdzop` + `dlq-lcc-*` RBAC is granted on `lkc-zmmgymd` |
+| **DEV** | `lkc-0n18zp` (`env-q65xr7`) | **13** | **0** | **13** | N/A (No `gcp_*` connectors in DEV) | **N/A (0 `gcp_*` connectors)** |
 
 ---
 

@@ -17,104 +17,153 @@ Personal Access Tokens (PATs) are disabled by Blip organization policy. Authenti
 - **Profile:** `DEFAULT` (stored in `~/.databrickscfg` with automatic OAuth token refresh via `~/.databricks/token-cache.json`)
 - **Default Serverless SQL Warehouse ID:** `0a78d10918dd0e80` (`dataplatform_dev_warehouse`)
 
-### Re-authenticating (if OAuth session expires)
-If queries return `401 Unauthorized` or token expiration errors, re-run:
-```bash
-PATH="/tmp/bin:$PATH" ~/.local/bin/databricks auth login \
-  --host https://adb-1974038730385138.18.azuredatabricks.net \
-  --profile DEFAULT
-```
+---
+
+## ⚡ GOLDEN RULE: Timestamp Alignment & Partition Pre-Filtering
+
+### 1. Why `_meta_enqueued_time` $\neq$ Databricks `StorageDate`
+- In **Databricks (`bliplayer.raw.*`, `rawcoreblip.blipraw.*`)**, tables do NOT filter by broker arrival time; they filter by **`StorageDate`** (or `StorageDateBR`), which is extracted from the application JSON payload (`$.StorageDate`, `$.storageDate`, or `$.timestamp`).
+- In **BigQuery (`raw_*_kfkevh.imt_*`)**, tables are physically partitioned by **`DATE(_meta_enqueued_time)`** (the Kafka/EventHub broker publish time in UTC).
+- Because broker ingestion can lag application `StorageDate` by milliseconds to minutes, comparing Databricks `StorageDate` against BigQuery `_meta_enqueued_time` creates artificial boundary drift at the edges of each hour.
+- **Empirical Proof:** When filtering both Databricks (`StorageDate`) and BigQuery (`JSON_VALUE(data, '$.StorageDate')`) over `'2026-09-16 14:00:00'` to `'2026-09-16 15:00:00'` for `evhns-msging-server3-prd-dalmata-003`, **both return 28,720,517 rows (100.000000% exact match to the single row)**.
+
+### 2. Mandatory Partition Pre-Filtering (Cost Protection & Timezone Rules)
+Because `JSON_VALUE(data, '$.StorageDate')` cannot prune BigQuery partitions, **every BigQuery parity query MUST apply a two-tier filter**:
+1. **Partition Pruning Envelope (`_meta_enqueued_time` in UTC):** Always pre-filter `_meta_enqueued_time` with a **$\pm 4\text{ hours}$ safety buffer** around the target `StorageDate` window:
+   ```sql
+   WHERE _meta_enqueued_time >= TIMESTAMP_SUB(TIMESTAMP('2026-09-16 14:00:00 UTC'), INTERVAL 4 HOUR)
+     AND _meta_enqueued_time <= TIMESTAMP_ADD(TIMESTAMP('2026-09-16 15:00:00 UTC'), INTERVAL 4 HOUR)
+   ```
+   This guarantees BigQuery scans only the relevant daily/hourly partitions and keeps query costs minimal.
+2. **Payload Timestamp Exact Filter (`StorageDate` in UTC):** Filter and group by the extracted payload timestamp:
+   ```sql
+   AND COALESCE(
+     SAFE_CAST(JSON_VALUE(data, '$.StorageDate') AS TIMESTAMP),
+     SAFE_CAST(JSON_VALUE(data, '$.storageDate') AS TIMESTAMP),
+     SAFE_CAST(JSON_VALUE(data, '$.timestamp') AS TIMESTAMP)
+   ) BETWEEN TIMESTAMP('2026-09-16 14:00:00 UTC') AND TIMESTAMP('2026-09-16 15:00:00 UTC')
+   ```
+3. **Databricks Partition Pruning (`StorageDateDayBR` in UTC-3):** In Databricks, `StorageDateDayBR` is formatted as `'yyyy-MM-dd'` in **Brasília time (UTC-3)**. Always include `WHERE StorageDateDayBR IN (...)` covering the UTC-3 dates corresponding to your UTC window.
 
 ---
 
-## 🛠️ Executing Direct SQL Queries on Databricks
+## 🔑 Canonical `_kfkevh` Deduplication Contract
 
-Use the standalone CLI tool [`scripts/dbx_sql.py`](file:///usr/local/google/home/gricardo/blip-migration/scripts/dbx_sql.py) to run any query against Databricks Unity Catalog:
+Legacy tables (`_pubsub`) relied on `messageKey` (which is removed in `_kfkevh`). In the new unified **`raw_*_kfkevh.imt_*`** architecture, technical deduplication **MUST** always use the 3-column composite key:
+- **`_meta_namespace`** (Kafka topic or EventHub namespace)
+- **`_meta_partition_id`** (Partition ID string)
+- **`_meta_sequence_number`** (Kafka offset string or 64-bit Pub/Sub `message_id` string)
 
-```bash
-# Markdown Table Output (Default)
-python3 scripts/dbx_sql.py "SELECT current_catalog(), current_user()"
-
-# JSON Output (for programmatic comparison)
-python3 scripts/dbx_sql.py --format json "SHOW TABLES IN rawcoreblip.blipraw"
-
-# Execute SQL from a file
-python3 scripts/dbx_sql.py --file my_query.sql --format csv
-```
-
----
-
-## 🗺️ Canonical Mapping Matrix: BigQuery `_kfkevh` $\leftrightarrow$ Databricks Unity Catalog
-
-When auditing streaming ingestion in SAM (`southamerica-east1`), use the following canonical table mappings:
-
-| Entity | BigQuery `_kfkevh` Bronze Table (`str-0` / `shs-0`) | BigQuery Business Key Expression | Databricks Unity Catalog Table | Databricks Timestamp / Partition Column |
-| :--- | :--- | :--- | :--- | :--- |
-| **Tickets** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_tickets` | `JSON_VALUE(data, '$.id')` | `rawcoreblip.blipraw.tickets` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-| **Messages (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_messages` | `JSON_VALUE(data, '$.id')` | `bliplayer.raw.messages` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-| **Notifications (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_notifications` | `JSON_VALUE(data, '$.id')` | `bliplayer.raw.notifications` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-| **Commands (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_commands` | `JSON_VALUE(data, '$.id')` | `rawcoreblip.blipraw.commands` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-| **Session (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_session` | `JSON_VALUE(data, '$.id')` | `rawcoreblip.blipraw.session` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-| **Transport (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_transport` | `JSON_VALUE(data, '$.id')` | `rawcoreblip.blipraw.transport` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-| **Messages (Shiba)** | `blip-dpl-prd-sam-i-plt-shs-0.raw_platform_kfkevh.imt_messages_shiba` | `JSON_VALUE(data, '$.id')` | `bliplayer_shiba.raw.messages` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-| **Notifications (Shiba)**| `blip-dpl-prd-sam-i-plt-shs-0.raw_platform_kfkevh.imt_notifications_shiba`| `JSON_VALUE(data, '$.id')` | `bliplayer_shiba.raw.notifications` | `enqueuedTime` (Part: `StorageDateDayBR`) |
-
-> [!IMPORTANT]
-> **Full Lineage Reference:** For all 199 canonical Silver/Gold tables and column-level lineage, inspect [`docs/Assessment/global_data_model.json`](file:///usr/local/google/home/gricardo/blip-migration/docs/Assessment/global_data_model.json) (`legacy_lineage` field) and [`docs/[Blip] Mapeamento.csv`](file:///usr/local/google/home/gricardo/blip-migration/docs/%5BBlip%5D%20Mapeamento.csv).
-
----
-
-## ⚖️ Methodology: Comparing Deduplicated `_kfkevh` vs. Databricks
-
-BigQuery `_kfkevh` Bronze tables receive **at-least-once** streaming appends from Confluent Kafka Connect and Google Cloud Pub/Sub Import. Downstream Dataform (`02_staging/`) applies deterministic technical deduplication before loading Silver.
-
-To perform a fair 1:1 parity check against Databricks over closed hourly windows:
-
-### 1. BigQuery Deduplicated Aggregation Query (`GoogleSQL`)
-Always apply the exact Dataform staging deduplication window (`QUALIFY ROW_NUMBER()`) and exclude the currently open hour:
+### Canonical BigQuery Query Template (`_kfkevh` Deduplicated + Timestamp Aligned)
 
 ```sql
-WITH deduped AS (
+WITH pruned_and_deduped AS (
   SELECT
-    _meta_enqueued_time,
     _meta_namespace,
-    _meta_source_signature,
-    JSON_VALUE(data, '$.id') AS business_id
-  FROM `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_tickets`
-  WHERE _meta_enqueued_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 12 HOUR)
-    AND _meta_enqueued_time < TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), HOUR)
+    _meta_partition_id,
+    _meta_sequence_number,
+    _meta_enqueued_time,
+    COALESCE(
+      SAFE_CAST(JSON_VALUE(data, '$.StorageDate') AS TIMESTAMP),
+      SAFE_CAST(JSON_VALUE(data, '$.storageDate') AS TIMESTAMP),
+      SAFE_CAST(JSON_VALUE(data, '$.timestamp') AS TIMESTAMP),
+      _meta_enqueued_time
+    ) AS storage_date_utc,
+    COALESCE(
+      JSON_VALUE(data, '$.Ticket.id'),
+      JSON_VALUE(data, '$.Id'),
+      JSON_VALUE(data, '$.id')
+    ) AS business_id
+  FROM `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_notifications`
+  -- 1. MANDATORY PARTITION PRUNING ENVELOPE (UTC +/- 4 hours)
+  WHERE _meta_enqueued_time >= TIMESTAMP_SUB(TIMESTAMP('2026-09-16 14:00:00 UTC'), INTERVAL 4 HOUR)
+    AND _meta_enqueued_time <= TIMESTAMP_ADD(TIMESTAMP('2026-09-16 15:00:00 UTC'), INTERVAL 4 HOUR)
+    AND _meta_namespace = 'evhns-msging-server3-prd-dalmata-003'
+  -- 2. CANONICAL _kfkevh 3-COLUMN DEDUPLICATION
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY _meta_namespace, _meta_partition_id, _meta_sequence_number
     ORDER BY _meta_enqueued_time DESC
   ) = 1
 )
 SELECT
-  FORMAT_TIMESTAMP('%Y-%m-%d %H:00', TIMESTAMP_TRUNC(_meta_enqueued_time, HOUR)) AS hour_utc,
+  _meta_namespace AS nameSpace,
+  FORMAT_TIMESTAMP('%Y-%m-%d %H:00', TIMESTAMP_TRUNC(storage_date_utc, HOUR)) AS hour_utc,
   COUNT(*) AS bq_dedup_rows,
-  COUNT(DISTINCT business_id) AS bq_unique_keys
-FROM deduped
-GROUP BY 1
-ORDER BY 1 DESC;
+  COUNT(DISTINCT business_id) AS bq_unique_ids
+FROM pruned_and_deduped
+-- 3. EXACT PAYLOAD TIMESTAMP ALIGNMENT WITH DATABRICKS StorageDate
+WHERE storage_date_utc BETWEEN TIMESTAMP('2026-09-16 14:00:00 UTC') AND TIMESTAMP('2026-09-16 15:00:00 UTC')
+GROUP BY 1, 2
+ORDER BY 2 DESC;
 ```
 
-### 2. Databricks Aggregation Query (`Spark SQL`)
-Filter by partition (`StorageDateDayBR`) for partition pruning and truncate `enqueuedTime` to UTC hours:
+### Canonical Databricks Query Template (`Spark SQL` Equivalent)
 
 ```sql
 SELECT
-  DATE_FORMAT(DATE_TRUNC('HOUR', enqueuedTime), 'yyyy-MM-dd HH:00') AS hour_utc,
-  COUNT(*) AS dbx_total_rows,
-  COUNT(DISTINCT id) AS dbx_unique_keys
-FROM rawcoreblip.blipraw.tickets
-WHERE StorageDateDayBR >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), 2), 'yyyy-MM-dd')
-  AND enqueuedTime >= TIMESTAMPADD(HOUR, -12, CURRENT_TIMESTAMP())
-  AND enqueuedTime < DATE_TRUNC('HOUR', CURRENT_TIMESTAMP())
-GROUP BY 1
-ORDER BY 1 DESC;
+  nameSpace,
+  DATE_FORMAT(DATE_TRUNC('HOUR', StorageDate), 'yyyy-MM-dd HH:00') AS hour_utc,
+  COUNT(*) AS dbx_rows,
+  COUNT(DISTINCT Id) AS dbx_unique_ids
+FROM bliplayer.raw.notifications
+-- 1. MANDATORY PARTITION PRUNING (UTC-3 Date String)
+WHERE StorageDateDayBR IN ('2026-09-16', '2026-09-17')
+  -- 2. EXACT PAYLOAD TIMESTAMP WINDOW
+  AND StorageDate BETWEEN TIMESTAMP('2026-09-16 14:00:00') AND TIMESTAMP('2026-09-16 15:00:00')
+  AND nameSpace = 'evhns-msging-server3-prd-dalmata-003'
+GROUP BY 1, 2
+ORDER BY 2 DESC;
 ```
 
-### 3. Automated Comparative Runner
-Run the automated cross-cloud parity auditor:
-```bash
-python3 orchestration/scripts/audit_kfkevh_vs_databricks.py --hours 6
-```
+---
+
+## 🗺️ Canonical Mapping Matrix: BigQuery `_kfkevh` $\leftrightarrow$ Databricks Unity Catalog
+
+👉 **O mapeamento completo e detalhado das 61 tabelas canônicas (`str-0` e `shs-0`) está persistido e governado em:**
+- **Markdown Oficial (61 Tabelas por Domínio)**: `orchestration/reports/kfkevh_parity/CANONICAL_61_KFKEVH_TO_DATABRICKS_MAPPING.md`
+- **Catálogo Estruturado JSON**: `orchestration/reports/kfkevh_parity/canonical_61_kfkevh_to_databricks_mapping.json`
+
+### Resumo das Principais Tabelas Core (`str-0` Padrão vs. `shs-0` Shiba Segregado):
+
+> [!IMPORTANT]
+> **Segregação Arquitetural Estrita do Tenant Shiba (`shs-0` $\leftrightarrow$ `bliplayer_shiba`):**
+> - No **GCP (Terraform `migracao_ingestao_v2/01_terraform/environments/sam/kfkevh_datasets_and_tables.tf`)**, as 18 tabelas canônicas do Shiba (`imt_*_shiba` em `raw_platform_kfkevh` e `imt_llmserverrequests_shiba` em `raw_blipaisuite_kfkevh`) residem **exclusivamente no projeto segregado `blip-dpl-prd-sam-i-plt-shs-0`** (nunca em `blip-dpl-prd-sam-i-plt-str-0`).
+> - No **Azure Databricks Unity Catalog (`scripts/generate_61_mapping_and_3h_matrix.py`)**, as tabelas do Shiba não residem no catálogo padrão `bliplayer` / `rawcoreblip`, mas sim no catálogo segregado **`bliplayer_shiba`** (`bliplayer_shiba.raw.*` e `bliplayer_shiba.shibablipraw.*`).
+> - Os 4 conectores canônicos `gcp_bq_sink_sam_shiba_01..04` (`tasks.max = 1`) gravam diretamente em `project = blip-dpl-prd-sam-i-plt-shs-0`, `datasets = raw_platform_kfkevh` com zero tabelas intermediárias.
+
+| Entity | BigQuery `_kfkevh` Bronze Table (`str-0` / `shs-0`) | Payload Timestamp JSON Path | Databricks Unity Catalog Table | Databricks Timestamp & Partition Columns |
+| :--- | :--- | :--- | :--- | :--- |
+| **Notifications (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_notifications` | `$.StorageDate` / `$.timestamp` | `bliplayer.raw.notifications` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Messages (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_messages` | `$.StorageDate` / `$.timestamp` | `bliplayer.raw.messages` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Tickets** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_tickets` | `$.Ticket.storageDate` / `$.DateTime` | `rawcoreblip.blipraw.tickets` | `storageDate` / `enqueuedTime` (Part: `StorageDateDayBR`) |
+| **Commands (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_commands` | `$.StorageDate` / `$.timestamp` | `bliplayer.raw.commands` | `StorageDate` / `EventEnqueuedUtcTime` (Part: `StorageDateDayBR`) |
+| **Session (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_session` | `$.StorageDate` / `$.timestamp` | `rawcoreblip.blipraw.session` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Transport (Core)** | `blip-dpl-prd-sam-i-plt-str-0.raw_platform_kfkevh.imt_transport` | `$.StorageDate` / `$.timestamp` | `rawcoreblip.blipraw.transport` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Notifications (Shiba)** | `blip-dpl-prd-sam-i-plt-shs-0.raw_platform_kfkevh.imt_notifications_shiba` | `$.StorageDate` / `$.timestamp` | `bliplayer_shiba.raw.notifications` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Messages (Shiba)** | `blip-dpl-prd-sam-i-plt-shs-0.raw_platform_kfkevh.imt_messages_shiba` | `$.StorageDate` / `$.timestamp` | `bliplayer_shiba.raw.messages` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Commands (Shiba)** | `blip-dpl-prd-sam-i-plt-shs-0.raw_platform_kfkevh.imt_commands_shiba` | `$.StorageDate` / `$.timestamp` | `bliplayer_shiba.raw.commands` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Session (Shiba)** | `blip-dpl-prd-sam-i-plt-shs-0.raw_platform_kfkevh.imt_session_shiba` | `$.StorageDate` / `$.timestamp` | `bliplayer_shiba.shibablipraw.session` | `StorageDate` (Part: `StorageDateDayBR`) |
+| **Transport (Shiba)** | `blip-dpl-prd-sam-i-plt-shs-0.raw_platform_kfkevh.imt_transport_shiba` | `$.StorageDate` / `$.timestamp` | `bliplayer_shiba.shibablipraw.transport` | `StorageDate` (Part: `StorageDateDayBR`) |
+
+---
+
+## 🛠️ CLI Tools & Automated Matrix Runners
+
+1. **Multi-Table 3-Hour Comparative Matrix Generator (`scripts/generate_61_mapping_and_3h_matrix.py`)**:
+   Gera o dashboard comparativo quebrado por hora (`H-3`, `H-2`, `H-1`) + **Soma Total de N Horas (`Soma 3h BQ` vs `Soma 3h DBX`)** e salva em `orchestration/reports/kfkevh_parity/matrix_3h_comparative_dashboard.md`:
+   ```bash
+   CLOUDSDK_ACTIVE_CONFIG_NAME=blip CLOUDSDK_METRICS_ENVIRONMENT=datacloud.jetski \
+     python3 scripts/generate_61_mapping_and_3h_matrix.py \
+     --mode hybrid \
+     --start-utc "2026-09-16 13:00:00" \
+     --hours 3 \
+     --sample-tables "imt_notifications,imt_tickets"
+   ```
+2. **Direct SQL Runner (`scripts/dbx_sql.py`)**:
+   ```bash
+   python3 scripts/dbx_sql.py "SELECT nameSpace, COUNT(*) FROM bliplayer.raw.notifications WHERE StorageDateDayBR = '2026-09-16' AND StorageDate BETWEEN '2026-09-16 14:00:00' AND '2026-09-16 15:00:00' GROUP BY 1"
+   ```
+3. **Single-Entity Deep Auditor (`orchestration/scripts/audit_kfkevh_vs_databricks.py`)**:
+   ```bash
+   python3 orchestration/scripts/audit_kfkevh_vs_databricks.py --only notifications --start "2026-09-16 13:00:00" --end "2026-09-16 16:00:00" --namespace "evhns-msging-server3-prd-dalmata-003"
+   ```

@@ -5,7 +5,7 @@ description: Use when migrating streaming ingestion pipelines in Cloud Composer 
 
 # Blip: Cloud Composer & Dataform Streaming Migration (Dataflow Elimination)
 
-Comprehensive operational guide and architecture patterns for migrating streaming ingestion pipelines from legacy Dataflow jobs (`KafkaToBigQuery` / `EventHubsToBigQuery`) to pure incremental Dataform routines running on Cloud Composer, backed by Confluent Cloud Kafka BigLake Apache Iceberg Managed Tables (`raw_*_kfkconn.imt_*`).
+Comprehensive operational guide and architecture patterns for migrating streaming ingestion pipelines from legacy Dataflow jobs (`KafkaToBigQuery` / `EventHubsToBigQuery`) to pure incremental Dataform routines running on Cloud Composer, backed by unified Confluent Cloud Kafka Connect (`BigQueryStorageSink`, 51 canonical connectors `tasks.max=1`) + Cloud Pub/Sub Import BigQuery Direct Subscriptions streaming into BigLake Apache Iceberg Managed Tables (`raw_*_kfkevh.imt_*` / `raw_*_kfkconn.imt_*`).
 
 ---
 
@@ -13,10 +13,10 @@ Comprehensive operational guide and architecture patterns for migrating streamin
 
 In the legacy Blip architecture, Cloud Composer DAGs launched long-running streaming Dataflow jobs (`DataflowStartFlexTemplateOperator`) before compiling and executing incremental Dataform transformations (`DataformCreateCompilationResultOperator` and `DataformCreateWorkflowInvocationOperator`).
 
-Confluent Cloud Kafka Connect (`gcp_bq_sink_*`) now streams all Kafka topics directly into BigLake Apache Iceberg Managed Tables (`raw_platform_kfkconn.imt_*`, `raw_blipaisuite_kfkconn.imt_*`) in real time.
+Confluent Cloud Kafka Connect (`gcp_bq_sink_sam_platform_01..36`, `gcp_bq_sink_sam_copilot_01..09`, `gcp_bq_sink_sam_shiba_01..04`, `gcp_bq_sink_platform_core_blip`, `gcp_bq_sink_brazil_conversationalmessages_sr` — 51 canonical connectors with `tasks.max=1` and zero intermediate staging tables) and Pub/Sub Import Direct Subscriptions now stream all topics directly into canonical BigLake Apache Iceberg Managed Tables (`raw_platform_kfkevh.imt_*`, `raw_copilot_kfkevh.imt_*`, `raw_blipaisuite_kfkevh.imt_*` in `blip-dpl-prd-sam-i-plt-str-0`, and `raw_platform_kfkevh.imt_*_shiba` in `blip-dpl-prd-sam-i-plt-shs-0`).
 
 **Core Principle:**
-> **Never keep Dataflow jobs running inside Composer DAGs once Confluent Connect is live.**  
+> **Never keep Dataflow jobs running inside Composer DAGs once Confluent Connect / Pub/Sub Import is live.**  
 > Dataflow streaming inside the DAG creates duplicate BigQuery Storage Write API ingestion costs ($0.045/GB in `southamerica-east1`) and wastes ~$19k–$21k/month in redundant GCE worker compute. Composer DAGs must be refactored into pure, fast (<30s) incremental Dataform execution routines.
 
 ```
